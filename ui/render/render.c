@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #if defined(_WIN32)
+	#include "d3d9.h"
 	#include "d3d11.h"
 	#include "d3d12.h"
 
@@ -35,6 +36,7 @@ static struct render_callbacks CBS[] = {
 	[RENDER_GL]    = {gl_init,    gl_destroy,    gl_get_device,    gl_draw,    gl_submit_parsec,    gl_present,    gl_set_sampler},
 
 	#if defined(_WIN32)
+	[RENDER_D3D9]  = {d3d9_init,  d3d9_destroy,  d3d9_get_device,  d3d9_draw,  d3d9_submit_parsec,  d3d9_present,  d3d9_set_sampler},
 	[RENDER_D3D11] = {d3d11_init, d3d11_destroy, d3d11_get_device, d3d11_draw, d3d11_submit_parsec, d3d11_present, d3d11_set_sampler},
 	[RENDER_D3D12] = {d3d12_init, d3d12_destroy, d3d12_get_device, d3d12_draw, d3d12_submit_parsec, d3d12_present, d3d12_set_sampler},
 

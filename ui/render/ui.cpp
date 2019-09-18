@@ -8,7 +8,9 @@
 #include "imgui/imgui_impl_opengl3.h"
 
 #if defined(_WIN32)
+	#include <d3d9.h>
 	#include <d3d11.h>
+	#include "imgui/imgui_impl_dx9.h"
 	#include "imgui/imgui_impl_dx11.h"
 	#if defined(__x86_64__)
 	#include "ui-d3d12-shim.h"
@@ -162,6 +164,9 @@ static void ui_menu(struct ui *ctx, struct ui_props *props)
 				ctx->cbs.mode(RENDER_GL, ctx->opaque);
 
 			#if defined(_WIN32)
+			if (ImGui::MenuItem("DirectX 9", "", props->mode == RENDER_D3D9, true))
+				ctx->cbs.mode(RENDER_D3D9, ctx->opaque);
+
 			if (ImGui::MenuItem("DirectX 11", "", props->mode == RENDER_D3D11, true))
 				ctx->cbs.mode(RENDER_D3D11, ctx->opaque);
 
@@ -523,6 +528,7 @@ void ui_init(struct ui **ctx_out, SDL_Window *window, struct ui_cbs *cbs, void *
 	switch (mode) {
 		case RENDER_GL:    ImGui_ImplOpenGL3_Init("#version 110");                                        break;
 		#if defined(_WIN32)
+		case RENDER_D3D9:  ImGui_ImplDX9_Init((IDirect3DDevice9 *) device);                               break;
 		case RENDER_D3D11: ImGui_ImplDX11_Init((ID3D11Device *) device, (ID3D11DeviceContext *) context); break;
 		#if defined(__x86_64__)
 		case RENDER_D3D12: ui_d3d12_init(device, &ctx->d3d12_shim);                                       break;
@@ -543,6 +549,7 @@ void ui_destroy(struct ui **ctx_out)
 	switch (ctx->mode) {
 		case RENDER_GL:    ImGui_ImplOpenGL3_Shutdown();        break;
 		#if defined(_WIN32)
+		case RENDER_D3D9:  ImGui_ImplDX9_Shutdown();            break;
 		case RENDER_D3D11: ImGui_ImplDX11_Shutdown();           break;
 		#if defined(__x86_64__)
 		case RENDER_D3D12: ui_d3d12_shutdown(&ctx->d3d12_shim); break;
@@ -569,6 +576,7 @@ void ui_new_frame(struct ui *ctx, struct render_device *device, struct render_co
 	switch (ctx->mode) {
 		case RENDER_GL:    ImGui_ImplOpenGL3_NewFrame();        break;
 		#if defined(_WIN32)
+		case RENDER_D3D9:  ImGui_ImplDX9_NewFrame();            break;
 		case RENDER_D3D11: ImGui_ImplDX11_NewFrame();           break;
 		#if defined(__x86_64__)
 		case RENDER_D3D12: ui_d3d12_new_frame();                break;
@@ -606,6 +614,7 @@ void ui_new_frame(struct ui *ctx, struct render_device *device, struct render_co
 	switch (ctx->mode) {
 		case RENDER_GL:    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());                    break;
 		#if defined(_WIN32)
+		case RENDER_D3D9:  ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());                        break;
 		case RENDER_D3D11: ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());                       break;
 		#if defined(__x86_64__)
 		case RENDER_D3D12: ui_d3d12_render_draw_data(ctx->d3d12_shim, context, ImGui::GetDrawData()); break;

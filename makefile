@@ -22,6 +22,7 @@ OBJS = \
 	ui/render/render.obj \
 	ui/render/gl.obj \
 	ui/render/glproc.obj \
+	ui/render/d3d9.obj \
 	ui/render/d3d11.obj \
 	ui/render/d3d12.obj \
 	ui/render/ui.obj \
@@ -73,6 +74,7 @@ LIBS = \
 	ole32.lib \
 	oleaut32.lib \
 	opengl32.lib \
+	d3d9.lib \
 	d3d11.lib \
 	d3d12.lib \
 	dxgi.lib \

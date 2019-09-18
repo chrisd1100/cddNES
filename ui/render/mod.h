@@ -22,8 +22,9 @@ enum render_mode {
 	RENDER_GL    = 1,
 
 	#if defined(_WIN32)
-	RENDER_D3D11 = 2,
-	RENDER_D3D12 = 3,
+	RENDER_D3D9  = 2,
+	RENDER_D3D11 = 3,
+	RENDER_D3D12 = 4,
 
 	#elif defined(__APPLE__)
 	RENDER_METAL = 2,
