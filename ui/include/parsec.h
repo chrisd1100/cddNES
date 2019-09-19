@@ -34,7 +34,7 @@
 #define PARSEC_VER \
 	((uint32_t) (((uint16_t) PARSEC_VER_MAJOR << 16u) | ((uint16_t) PARSEC_VER_MINOR)))
 
-/// @brief Default ::Parsec instance confgiuration passed to ::ParsecInit.
+/// @brief Default ::Parsec instance configuration passed to ::ParsecInit.
 #define PARSEC_DEFAULTS {   \
 	/*upnp       */ 1,      \
 	/*clientPort */ 0,      \
@@ -654,7 +654,7 @@ typedef struct ParsecMouseWheelMessage {
 typedef struct ParsecMouseMotionMessage {
 	int32_t x;     ///< The absolute horizontal screen coordinate of the cursor  if `relative` is `false`, or the delta (can be negative) if `relative` is `true`.
 	int32_t y;     ///< The absolute vertical screen coordinate of the cursor if `relative` is `false`, or the delta (can be negative) if `relative` is `true`.
-	bool relative; ///< `true` for relative mode, `false` for absolute mode. See above.
+	bool relative; ///< `true` for relative mode, `false` for absolute mode. See details.
 	uint8_t __pad[3];
 } ParsecMouseMotionMessage;
 
@@ -708,9 +708,9 @@ typedef struct ParsecClientConfig {
 	int32_t decoderSoftware; ///< `true` to force decoding of video frames via a software implementation.
 	int32_t mediaContainer;  ///< ::ParsecContainer value.
 	int32_t protocol;        ///< ::ParsecProtocol value.
-	int32_t resolutionX;     ///< See above.
-	int32_t resolutionY;     ///< See above.
-	int32_t refreshRate;     ///< See above.
+	int32_t resolutionX;     ///< See details.
+	int32_t resolutionY;     ///< See details.
+	int32_t refreshRate;     ///< See details.
 	bool pngCursor;          ///< `true` to return compressed PNG cursor images during ::ParsecClientPollEvents, `false` to return a 32-bit RGBA image.
 	uint8_t __pad[3];
 } ParsecClientConfig;
@@ -826,6 +826,14 @@ typedef struct Parsec Parsec;
 /// @details Passed to ::ParsecHostGLSubmitFrame. Prevents obligatory include of GL headers.
 typedef uint32_t ParsecGLuint;
 
+/// @brief D3D9 `IDirect3DDevice9`.
+/// @details Passed to ::ParsecHostD3D9SubmitFrame. Prevents obligatory include of d3d9.h.
+typedef void ParsecD3D9Device;
+
+/// @brief D3D9 `IDirect3DSurface9`.
+/// @details Passed to ::ParsecHostD3D9SubmitFrame. Prevents obligatory include of d3d9.h.
+typedef void ParsecD3D9Surface;
+
 /// @brief D3D11 `ID3D11Device`.
 /// @details Passed to ::ParsecHostD3D11SubmitFrame. Prevents obligatory include of d3d11.h.
 typedef void ParsecD3D11Device;
@@ -896,6 +904,7 @@ typedef void (*ParsecAudioCallback)(int16_t *pcm, uint32_t frames, void *opaque)
 #define ParsecHostSubmitCursor     (*ParsecHostSubmitCursor)
 #define ParsecHostSubmitRumble     (*ParsecHostSubmitRumble)
 #define ParsecHostGLSubmitFrame    (*ParsecHostGLSubmitFrame)
+#define ParsecHostD3D9SubmitFrame  (*ParsecHostD3D9SubmitFrame)
 #define ParsecHostD3D11SubmitFrame (*ParsecHostD3D11SubmitFrame)
 
 typedef struct ParsecAPI {
@@ -1068,7 +1077,7 @@ ParsecClientSendUserData(Parsec *ps, uint32_t id, char *text);
 ///     ::HOST_GAME requires that the application call ::ParsecHostSubmitAudio and ::ParsecHostD3D11SubmitFrame
 ///     (or similar) to push data to guests, and call ::ParsecHostPollInput to process input from guests.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
-/// @param[in] mode Host mode of operation. See above.
+/// @param[in] mode Host mode of operation. See details.
 /// @param[in] cfg Host configuration. May be updated later via ::ParsecHostSetConfig. May be `NULL`
 ///     to use ::PARSEC_HOST_DEFAULTS.
 /// @param[in] sessionID Session ID obtained via the [Parsec API](https://github.com/parsec-cloud/parsec-sdk/tree/master/api/public).
@@ -1195,6 +1204,14 @@ ParsecHostSubmitRumble(Parsec *ps, uint32_t guestID, uint32_t gamepadID, uint8_t
 EXPORT ParsecStatus
 ParsecHostGLSubmitFrame(Parsec *ps, ParsecGLuint frame);
 
+/// @brief Submit rendered D3D9 frame to connected guests. ::HOST_GAME only. Windows only.
+/// @param[in] ps ::Parsec instance returned by ::ParsecInit.
+/// @param[in] device Cast to `IDirect3DDevice9 *` used within your render loop.
+/// @param[in] frame Cast to `IDirect3DSurface9 *` representing a rendered frame.
+/// @returns ::PARSEC_OK if the frame was submitted successfully, otherwise a ::ParsecStatus error value.
+EXPORT ParsecStatus
+ParsecHostD3D9SubmitFrame(Parsec *ps, ParsecD3D9Device *device, ParsecD3D9Surface *frame);
+
 /// @brief Submit rendered D3D11 frame to connected guests. ::HOST_GAME only. Windows only.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
 /// @param[in] device Cast to `ID3D11Device *` used within your render loop.
@@ -1241,6 +1258,7 @@ ParsecHostD3D11SubmitFrame(Parsec *ps, ParsecD3D11Device *device, ParsecD3D11Dev
 #undef ParsecHostSubmitCursor
 #undef ParsecHostSubmitRumble
 #undef ParsecHostGLSubmitFrame
+#undef ParsecHostD3D9SubmitFrame
 #undef ParsecHostD3D11SubmitFrame
 #endif
 

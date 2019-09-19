@@ -14,6 +14,7 @@ struct d3d9 {
 	D3DDISPLAYMODEEX mode;
 	IDirect3D9Ex *factory;
 	IDirect3DDevice9Ex *device;
+	IDirect3DDevice9 *device_og;
 	IDirect3DSwapChain9Ex *swap_chain;
 	IDirect3DVertexShader9 *vs;
 	IDirect3DPixelShader9 *ps;
@@ -101,6 +102,9 @@ int32_t d3d9_init(struct render_mod **mod_out, void *window, bool vsync,
 	e = d3d9->factory->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, d3d9->hwnd,
 		flags, &pp, NULL, &d3d9->device);
 	if (e != D3D_OK) {printf("CreateDeviceEx=%d\n", e); r = -1; goto except;}
+
+	e = d3d9->device->QueryInterface(__uuidof(IDirect3DDevice9), (void **) &d3d9->device_og);
+	if (e != D3D_OK) {printf("QueryInterface=%d\n", e); r = -1; goto except;}
 
 	if (!d3d9->headless) {
 		e = d3d9->device->GetSwapChain(0, &swap_chain);
@@ -225,6 +229,9 @@ void d3d9_destroy(struct render_mod **mod_out)
 
 	if (d3d9->swap_chain)
 		d3d9->swap_chain->Release();
+
+	if (d3d9->device_og)
+		d3d9->device_og->Release();
 
 	if (d3d9->device)
 		d3d9->device->Release();
@@ -363,10 +370,8 @@ void d3d9_draw(struct render_mod *mod, uint32_t window_w, uint32_t window_h, uin
 enum ParsecStatus d3d9_submit_parsec(struct render_mod *mod, ParsecDSO *parsec)
 {
 	struct d3d9 *d3d9 = (struct d3d9 *) mod;
-	d3d9, parsec;
 
-	//return ParsecHostD3D9SubmitFrame(parsec, d3d9->device, d3d9->render_target);
-	return PARSEC_OK;
+	return ParsecHostD3D9SubmitFrame(parsec, d3d9->device_og, d3d9->render_target);
 }
 
 void d3d9_present(struct render_mod *mod)
