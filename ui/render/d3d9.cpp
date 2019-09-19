@@ -5,10 +5,11 @@
 
 #include <windows.h>
 #include <d3d9.h>
-#include <dxgi.h>
 
 #include "shaders/d3d9/vs.h"
 #include "shaders/d3d9/ps.h"
+
+#define DUMMY_WIN_CLASS "d3d9_dummy_window"
 
 struct d3d9 {
 	D3DDISPLAYMODEEX mode;
@@ -23,7 +24,6 @@ struct d3d9 {
 	IDirect3DIndexBuffer9 *ib;
 	IDirect3DTexture9 *tex;
 	IDirect3DSurface9 *render_target;
-	IDXGIOutput *output;
 
 	HWND hwnd;
 	bool vsync;
@@ -34,32 +34,16 @@ struct d3d9 {
 	uint32_t h;
 };
 
-static int32_t d3d9_get_output(IDXGIOutput **output)
-{
-	IDXGIFactory1 *factory = NULL;
-	int32_t e = CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void **) &factory);
-
-	if (e == S_OK) {
-		IDXGIAdapter1 *adapter = NULL;
-		e = factory->EnumAdapters1(0, &adapter);
-
-		if (e != DXGI_ERROR_NOT_FOUND) {
-			e = adapter->EnumOutputs(0, output);
-
-			adapter->Release();
-		}
-
-		factory->Release();
-	}
-
-	return 0;
-}
-
 void d3d9_set_sampler(struct render_mod *mod, enum sampler sampler)
 {
 	struct d3d9 *d3d9 = (struct d3d9 *) mod;
 
 	d3d9->sampler = sampler;
+}
+
+static LRESULT CALLBACK WndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
 int32_t d3d9_init(struct render_mod **mod_out, void *window, bool vsync,
@@ -71,15 +55,26 @@ int32_t d3d9_init(struct render_mod **mod_out, void *window, bool vsync,
 	d3d9->sampler = sampler;
 	d3d9->vsync = vsync;
 
-	if (!d3d9->hwnd) {
-		//XXX create dummy window here
-
-		d3d9->headless = true;
-	}
-
 	int32_t r = 0;
 	D3DPRESENT_PARAMETERS pp = {0};
 	IDirect3DSwapChain9 *swap_chain = NULL;
+
+	if (!d3d9->hwnd) {
+		d3d9->headless = true;
+
+		WNDCLASSEX wx = {0};
+		wx.cbSize = sizeof(WNDCLASSEX);
+		wx.lpfnWndProc = (WNDPROC) WndProc;
+		wx.hInstance = GetModuleHandle(NULL);
+		wx.lpszClassName = DUMMY_WIN_CLASS;
+
+		ATOM a = RegisterClassEx(&wx);
+		if (a == 0) {printf("RegisterClassEx=0\n"); r = -1; goto except;}
+
+		d3d9->hwnd = CreateWindowEx(0, DUMMY_WIN_CLASS, NULL, WS_POPUP,
+			0, 0, 1, 1, NULL, NULL, NULL, NULL);
+		if (!d3d9->hwnd) {printf("CreateWindowEx=NULL\n"); r = -1; goto except;}
+	}
 
 	int32_t e = Direct3DCreate9Ex(D3D_SDK_VERSION, &d3d9->factory);
 	if (e != D3D_OK) {printf("Direct3DCreate9Ex=%d\n", e); r = -1; goto except;}
@@ -116,9 +111,6 @@ int32_t d3d9_init(struct render_mod **mod_out, void *window, bool vsync,
 		e = d3d9->device->SetMaximumFrameLatency(1);
 		if (e != S_OK) {printf("SetMaximumFrameLatency=%d\n", e); r = -1; goto except;}
 	}
-
-	e = d3d9_get_output(&d3d9->output);
-	if (e != S_OK) {printf("d3d9_get_output=%d\n", e); r = -1; goto except;}
 
 	e = d3d9->device->CreateVertexShader((DWORD *) VS, &d3d9->vs);
 	if (e != D3D_OK) {printf("CreateVertexShader=%d\n", e); r = -1; goto except;}
@@ -224,9 +216,6 @@ void d3d9_destroy(struct render_mod **mod_out)
 	if (d3d9->vs)
 		d3d9->vs->Release();
 
-	if (d3d9->output)
-		d3d9->output->Release();
-
 	if (d3d9->swap_chain)
 		d3d9->swap_chain->Release();
 
@@ -238,6 +227,13 @@ void d3d9_destroy(struct render_mod **mod_out)
 
 	if (d3d9->factory)
 		d3d9->factory->Release();
+
+	if (d3d9->headless) {
+		if (d3d9->hwnd)
+			DestroyWindow(d3d9->hwnd);
+
+		UnregisterClass(DUMMY_WIN_CLASS, GetModuleHandle(NULL));
+	}
 
 	free(d3d9);
 	*d3d9_out = NULL;
@@ -384,7 +380,7 @@ void d3d9_present(struct render_mod *mod)
 		int32_t e = d3d9->device->EndScene();
 
 		if (e == D3D_OK) {
-			if (d3d9->swap_chain) {
+			if (!d3d9->headless) {
 				IDirect3DSurface9 *back_buffer = NULL;
 				e = d3d9->swap_chain->GetBackBuffer(0, D3DBACKBUFFER_TYPE_MONO, &back_buffer);
 				if (e != D3D_OK) {printf("GetBackBuffer=%d\n", e); return;}
@@ -392,14 +388,11 @@ void d3d9_present(struct render_mod *mod)
 				e = d3d9->device->StretchRect(d3d9->render_target, NULL, back_buffer, NULL, D3DTEXF_NONE);
 				back_buffer->Release();
 				if (e != D3D_OK) {printf("StretchRect=%d\n", e); return;}
-
-				e = d3d9->device->PresentEx(NULL, NULL, NULL, NULL, 0);
-				if (e != D3D_OK && e != S_PRESENT_OCCLUDED && e != S_PRESENT_MODE_CHANGED)
-					{printf("PresentEx=%d\n", e); return;}
-
-			} else {
-				d3d9->output->WaitForVBlank();
 			}
+
+			e = d3d9->device->PresentEx(NULL, NULL, NULL, NULL, 0);
+			if (e != D3D_OK && e != S_PRESENT_OCCLUDED && e != S_PRESENT_MODE_CHANGED)
+				{printf("PresentEx=%d\n", e); return;}
 
 		} else {
 			printf("EndScene=%d\n", e);
