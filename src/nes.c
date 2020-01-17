@@ -313,6 +313,11 @@ EXPORT void nes_set_stereo(struct nes *nes, bool stereo)
 	apu_set_stereo(nes->apu, stereo);
 }
 
+EXPORT void nes_toggle_channel(struct nes *nes, enum apu_channel channel)
+{
+	apu_set_channels(nes->apu, apu_get_channels(nes->apu) ^ channel);
+}
+
 EXPORT void nes_set_sample_rate(struct nes *nes, uint32_t sample_rate)
 {
 	apu_set_sample_rate(nes->apu, sample_rate);

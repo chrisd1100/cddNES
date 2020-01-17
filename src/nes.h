@@ -34,6 +34,15 @@ enum mirror {
 	MIRROR_FOUR16     = 0x89ABCDEF,
 };
 
+enum apu_channel {
+	CHANNEL_PULSE0   = 0x01,
+	CHANNEL_PULSE1   = 0x02,
+	CHANNEL_TRIANGLE = 0x04,
+	CHANNEL_NOISE    = 0x08,
+	CHANNEL_DMC      = 0x10,
+	CHANNEL_ALL      = 0xFF,
+};
+
 #define SET_FLAG(reg, flag)   ((reg) |= (flag))
 #define GET_FLAG(reg, flag)   ((reg) & (flag))
 #define UNSET_FLAG(reg, flag) ((reg) &= ~(flag))
@@ -93,6 +102,7 @@ void nes_step(struct nes *nes);
 void nes_init(struct nes **nes_out, uint32_t sample_rate, bool stereo,
 	FRAME_CALLBACK new_frame, SAMPLE_CALLBACK new_samples, void *opaque);
 void nes_set_stereo(struct nes *nes, bool stereo);
+void nes_toggle_channel(struct nes *nes, enum apu_channel channel);
 void nes_set_sample_rate(struct nes *nes, uint32_t sample_rate);
 void nes_destroy(struct nes **nes_out);
 void nes_reset(struct nes *nes, bool hard);

@@ -427,6 +427,16 @@ static void cddnes_sdl_input(struct nes *nes, struct render *render, SDL_Event *
 
 			down = (event->type == SDL_KEYDOWN);
 			button = BUTTON_MAP[event->key.keysym.scancode];
+
+			if (event->type == SDL_KEYDOWN) {
+				switch (event->key.keysym.scancode) {
+					case SDL_SCANCODE_1: nes_toggle_channel(nes, CHANNEL_PULSE0); break;
+					case SDL_SCANCODE_2: nes_toggle_channel(nes, CHANNEL_PULSE1); break;
+					case SDL_SCANCODE_3: nes_toggle_channel(nes, CHANNEL_TRIANGLE); break;
+					case SDL_SCANCODE_4: nes_toggle_channel(nes, CHANNEL_NOISE); break;
+					case SDL_SCANCODE_5: nes_toggle_channel(nes, CHANNEL_DMC); break;
+				}
+			}
 			break;
 		case SDL_CONTROLLERBUTTONUP:
 		case SDL_CONTROLLERBUTTONDOWN:

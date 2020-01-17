@@ -553,6 +553,7 @@ struct apu {
 	bool irq_disabled;
 	bool frame_irq;
 	uint8_t delayed_reset;
+	uint32_t channels;
 
 	int64_t cpu_cycle;
 	int64_t frame_counter;
@@ -844,8 +845,23 @@ void apu_step(struct apu *apu, struct nes *nes, struct cpu *cpu, SAMPLE_CALLBACK
 	apu_noise_step_timer(&apu->n);
 
 	//sample
-	int16_t l = apu->p[0].output + apu->t.output + apu->d.output;
-	int16_t r = apu->p[1].output + apu->n.output;
+	int16_t l = 0, r = 0;
+
+	if (apu->channels & CHANNEL_PULSE0)
+		l += apu->p[0].output;
+
+	if (apu->channels & CHANNEL_PULSE1)
+		r += apu->p[1].output;
+
+	if (apu->channels & CHANNEL_TRIANGLE)
+		l += apu->t.output;
+
+	if (apu->channels & CHANNEL_NOISE)
+		r += apu->n.output;
+
+	if (apu->channels & CHANNEL_DMC)
+		l += apu->d.output;
+
 	apu_dac_step(&apu->dac, l, r, new_samples, opaque);
 
 	//process the frame counter
@@ -878,6 +894,16 @@ void apu_set_stereo(struct apu *apu, bool stereo)
 	apu->dac.stereo = stereo;
 }
 
+uint32_t apu_get_channels(struct apu *apu)
+{
+	return apu->channels;
+}
+
+void apu_set_channels(struct apu *apu, uint32_t channels)
+{
+	apu->channels = channels;
+}
+
 void apu_set_sample_rate(struct apu *apu, uint32_t sample_rate)
 {
 	apu->dac.factor = (uint32_t) ceil(TIME_UNIT * (double) sample_rate / (double) CLOCK_RATE);
@@ -888,6 +914,7 @@ void apu_init(struct apu **apu_out, uint32_t sample_rate, bool stereo)
 {
 	struct apu *apu = *apu_out = calloc(1, sizeof(struct apu));
 
+	apu_set_channels(apu, CHANNEL_ALL);
 	apu_set_stereo(apu, stereo);
 	apu_set_sample_rate(apu, sample_rate);
 	apu_dac_init();
