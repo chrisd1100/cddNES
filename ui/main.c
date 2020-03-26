@@ -97,20 +97,33 @@ static void cddnes_remove_pairing(int32_t *pairing, int32_t id)
 			pairing[x] = 0;
 }
 
-static void cddnes_guest_state_change(struct cdd *cdd, ParsecGuest *guest)
+static void cddnes_parsec_broadcast(ParsecDSO *parsec, char *msg)
+{
+	ParsecGuest *guests = NULL;
+	uint32_t n = ParsecHostGetGuests(parsec, GUEST_CONNECTED, &guests);
+
+	for (uint32_t x = 0; x < n; x++) {
+		ParsecHostSendUserData(parsec, guests[x].id, 0, msg);
+	}
+
+	free(guests);
+}
+
+static void cddnes_guest_state_change(ParsecDSO *parsec, int32_t *pairing, struct render *render, ParsecGuest *guest)
 {
 	const char *message = NULL;
 
 	switch (guest->state) {
 		case GUEST_CONNECTED:
-			message = "%s has connected.";
+			message = "@%s has connected.";
+			ParsecHostSendUserData(parsec, guest->id, 0, "@Welcome to cddNES! Type '@reset' to reset the game.");
 			break;
 		case GUEST_DISCONNECTED:
-			cddnes_remove_pairing(cdd->pairing, guest->id);
-			message = "%s has disconnected.";
+			cddnes_remove_pairing(pairing, guest->id);
+			message = "@%s has disconnected.";
 			break;
 		case GUEST_FAILED:
-			message = "%s was unable to connect.";
+			message = "@%s was unable to connect.";
 			break;
 		default:
 			return;
@@ -118,8 +131,9 @@ static void cddnes_guest_state_change(struct cdd *cdd, ParsecGuest *guest)
 
 	char user_msg[100];
 	snprintf(user_msg, sizeof(user_msg), message, guest->name);
+	cddnes_parsec_broadcast(parsec, user_msg);
 
-	render_ui_set_popup(cdd->render, user_msg, POPUP_TIMEOUT); //XXX must be thread safe
+	render_ui_set_popup(render, user_msg + 1, POPUP_TIMEOUT); //XXX must be thread safe
 }
 
 static void cddnes_parsec_log(enum ParsecLogLevel level, char *msg, void *opaque)
@@ -395,7 +409,7 @@ static enum nes_button CONTROLLER_MAP[SDL_CONTROLLER_BUTTON_MAX] = {
 	[SDL_CONTROLLER_BUTTON_DPAD_RIGHT] = NES_RIGHT,
 };
 
-static int8_t cddnes_find_pairing(int32_t *pairing, int32_t id)
+static int8_t cddnes_find_pairing(int32_t *pairing, int32_t id, ParsecDSO *parsec, ParsecGuest *guest)
 {
 	// search for an existing pairing
 	for (int8_t x = 0; x < 4; x++) {
@@ -407,6 +421,12 @@ static int8_t cddnes_find_pairing(int32_t *pairing, int32_t id)
 	for (int8_t x = 0; x < 4; x++) {
 		if (pairing[x] == 0) {
 			pairing[x] = id;
+
+			if (parsec) {
+				char msg[64];
+				snprintf(msg, 64, "@%s assigned player %d.", guest->name, x + 1);
+				cddnes_parsec_broadcast(parsec, msg);
+			}
 			return x;
 		}
 	}
@@ -414,7 +434,8 @@ static int8_t cddnes_find_pairing(int32_t *pairing, int32_t id)
 	return -1;
 }
 
-static void cddnes_sdl_input(struct nes *nes, struct render *render, SDL_Event *event, int32_t *pairing, int32_t id)
+static void cddnes_sdl_input(struct nes *nes, struct render *render, SDL_Event *event, int32_t *pairing, int32_t id,
+	ParsecDSO *parsec, ParsecGuest *guest)
 {
 	enum nes_button button = 0;
 	bool down = false;
@@ -446,10 +467,22 @@ static void cddnes_sdl_input(struct nes *nes, struct render *render, SDL_Event *
 	}
 
 	if (button != 0) {
-		int8_t player = MULTIPLAYER ? cddnes_find_pairing(pairing, id) : 0;
+		int8_t player = MULTIPLAYER ? cddnes_find_pairing(pairing, id, parsec, guest) : 0;
 
 		if (player != -1)
 			nes_controller(nes, player, button, down);
+	}
+}
+
+static void cddnes_process_chat_command(struct nes *nes, ParsecDSO *parsec, ParsecGuest *guest, char *command)
+{
+	char msg[256];
+
+	if (!strcmp(command, "@reset")) {
+		nes_reset(nes, false);
+		snprintf(msg, 256, "@%s pressed the reset button.", guest->name);
+
+		cddnes_parsec_broadcast(parsec, msg);
 	}
 }
 
@@ -461,7 +494,37 @@ static void cddnes_poll_parsec(struct nes *nes, ParsecDSO *parsec, int32_t *pair
 		SDL_Event event = {0};
 		cddnes_parsec_to_sdl(&msg, &event);
 		render_ui_sdl_input(render, &event);
-		cddnes_sdl_input(nes, render, &event, pairing, guest.id);
+		cddnes_sdl_input(nes, render, &event, pairing, guest.id, parsec, &guest);
+	}
+
+	for (ParsecHostEvent event; ParsecHostPollEvents(parsec, 0, &event);) {
+		switch (event.type) {
+			case HOST_EVENT_GUEST_STATE_CHANGE:
+				cddnes_guest_state_change(parsec, pairing, render, &event.guestStateChange.guest);
+				break;
+
+			case HOST_EVENT_USER_DATA: {
+				if (event.userData.id == 0) {
+					char *msg = ParsecGetBuffer(parsec, event.userData.key);
+
+					if (msg) {
+						// Headless command
+						if (msg[0] == '@') {
+							cddnes_process_chat_command(nes, parsec, &event.userData.guest, msg);
+
+						// Echo chat from the Parsec client
+						} else {
+							char full_msg[1024];
+							snprintf(full_msg, 1024, "%s: %s", event.userData.guest.name, msg);
+							cddnes_parsec_broadcast(parsec, full_msg);
+						}
+					}
+				}
+				break;
+			}
+			default:
+				break;
+		}
 	}
 }
 
@@ -469,7 +532,7 @@ static bool cddnes_poll_sdl(struct nes *nes, int32_t *pairing, struct render *re
 {
 	for (SDL_Event event; SDL_PollEvent(&event);) {
 		render_ui_sdl_input(render, &event);
-		cddnes_sdl_input(nes, render, &event, pairing, -1);
+		cddnes_sdl_input(nes, render, &event, pairing, -1, NULL, NULL);
 
 		switch (event.type) {
 			case SDL_QUIT:
@@ -624,20 +687,20 @@ int32_t main(int32_t argc, char **argv)
 
 		uint64_t frame_start = SDL_GetPerformanceCounter();
 
-		// poll input from parsec and locally via SDL
-		if (cdd->parsec) {
+		// poll input and events from parsec
+		if (cdd->parsec)
 			cddnes_poll_parsec(cdd->nes, cdd->parsec, cdd->pairing, cdd->render);
 
-			for (ParsecHostEvent event; ParsecHostPollEvents(cdd->parsec, 0, &event);)
-				if (event.type == HOST_EVENT_GUEST_STATE_CHANGE)
-					cddnes_guest_state_change(cdd, &event.guestStateChange.guest);
-		}
-
+		// poll input events locally from SDL
 		if (cdd->window)
 			cdd->done = cddnes_poll_sdl(cdd->nes, cdd->pairing, cdd->render);
 
 		// continue emulation, fires NES audio and frame callbacks
 		nes_step(cdd->nes);
+
+		// submits the final render to Parsec
+		if (cdd->parsec)
+			render_submit_parsec(cdd->render, cdd->parsec);
 
 		// draws the UI overlay and fires events
 		struct ui_props props = {.parsec = cdd->parsec, .pairing = cdd->pairing,
@@ -645,10 +708,6 @@ int32_t main(int32_t argc, char **argv)
 			.mode = cdd->mode, .logged_in = cdd->args.session[0], .hosting = cdd->hosting,
 			.vsync = cdd->vsync, .aspect = cdd->aspect, .overscan = cdd->overscan};
 		render_ui_draw(cdd->render, cdd->window, &props);
-
-		// submits the final render to Parsec
-		if (cdd->parsec)
-			render_submit_parsec(cdd->render, cdd->parsec);
 
 		// swaps the host window
 		render_present(cdd->render);

@@ -15,20 +15,21 @@
 #endif
 
 #if defined(_WIN32)
+	#pragma warning(push)
 	#pragma warning(disable: 4201)
 #endif
 
 
 /*** DEFINITIONS ***/
 
-#define GUEST_NAME_LEN   320 ///< (320) Maximum length of a guest's name. Used in ::ParsecGuest.
-#define ATTEMPT_ID_LEN   56  ///< (56) Length in bytes of an Attempt ID. Used in ::ParsecGuest and ::ParsecClientStatus.
+#define GUEST_NAME_LEN   32  ///< (32) Maximum length of a guest's name. Used in ::ParsecGuest.
 #define HOST_NAME_LEN    256 ///< (256) Maximum length  of a host's name. Used in ::ParsecHostConfig.
 #define HOST_DESC_LEN    512 ///< (512) Maximum length of a game's description. Used in ::ParsecHostConfig.
+#define HOST_SECRET_LEN  32  ///< (32) Maximum length of a host's secret code to grant temporary access. Used in ::ParsecHostConfig and ::ParsecClientConfig.
 #define GAME_ID_LEN      72  ///< (72) Maximum length of a Game ID. Used in ::ParsecHostConfig.
 
-#define PARSEC_VER_MAJOR 1   ///< (1) Parsec SDK breaking API/ABI change.
-#define PARSEC_VER_MINOR 0   ///< (0) Parsec SDK internal implementation detail.
+#define PARSEC_VER_MAJOR 3   ///< (3) Parsec SDK breaking API/ABI change.
+#define PARSEC_VER_MINOR 0   ///< (0) Parsec SDK internal implementation detail or additional functionality.
 
 /// @brief 32-bit concatenated major/minor version.
 #define PARSEC_VER \
@@ -47,7 +48,7 @@
 	/*resolutionY       */  0,     \
 	/*refreshRate       */  60,    \
 	/*adminMute         */  1,     \
-	/*exclusiveInput    */  1,     \
+	/*exclusiveInput    */  0,     \
 	/*encoderFPS        */  0,     \
 	/*encoderMaxBitrate */  10,    \
 	/*encoderH265       */  0,     \
@@ -55,18 +56,22 @@
 	/*name              */  "",    \
 	/*desc              */  "",    \
 	/*gameID            */  "",    \
+	/*secret            */  "",    \
 	/*publicGame        */  false, \
 }
 
 /// @brief Default client configuration passed to ::ParsecClientConnect.
-#define PARSEC_CLIENT_DEFAULTS {           \
-	/*decoderSoftware */ 0,                \
-	/*mediaContainer  */ CONTAINER_PARSEC, \
-	/*protocol        */ PROTO_MODE_BUD,   \
-	/*resolutionX     */ 0,                \
-	/*resolutionY     */ 0,                \
-	/*refreshRate     */ 60,               \
-	/*pngCursor       */ false,            \
+#define PARSEC_CLIENT_DEFAULTS {                \
+	/*decoderSoftware      */ 0,                \
+	/*mediaContainer       */ CONTAINER_PARSEC, \
+	/*protocol             */ PROTO_MODE_BUD,   \
+	/*resolutionX          */ 0,                \
+	/*resolutionY          */ 0,                \
+	/*refreshRate          */ 60,               \
+	/*secret               */ "",               \
+	/*pngCursor            */ false,            \
+	/*decoderCompatibility */ false,            \
+	/*decoderH265          */ false,            \
 }
 
 
@@ -82,25 +87,24 @@ extern "C" {
 typedef enum ParsecStatus {
 	PARSEC_OK                 = 0,       ///< 0
 
-	WRN_CONTINUE              = 10,      ///< 10
-
 	HOST_WRN_SHUTDOWN         = 4,       ///< 4
 	HOST_WRN_KICKED           = 5,       ///< 5
 
 	CONNECT_WRN_APPROVAL      = 6,       ///< 6
 	CONNECT_WRN_DECLINED      = 8,       ///< 8
 	CONNECT_WRN_CANCELED      = 9,       ///< 9
+	CONNECT_WRN_NO_ROOM       = 11,      ///< 11
 	CONNECT_WRN_PEER_GONE     = 99,      ///< 99
+	CONNECT_WRN_UNCONFIRMED   = 100,     ///< 100
+
+	WRN_CONTINUE              = 10,      ///< 10
+	PARSEC_CONNECTING         = 20,      ///< 20
 
 	DECODE_WRN_CONTINUE       = 1000,    ///< 1000
 	DECODE_WRN_ACCEPTED       = 1001,    ///< 1001
 	DECODE_WRN_REINIT         = 1003,    ///< 1003
 
 	NETWORK_WRN_TIMEOUT       = 2000,    ///< 2000
-
-	QUEUE_WRN_EMPTY           = 5000,    ///< 5000
-	QUEUE_WRN_NO_BUFFER       = 5001,    ///< 5001
-	QUEUE_WRN_TIMEOUT         = 5003,    ///< 5003
 
 	AUDIO_WRN_NO_DATA         = 6000,    ///< 6000
 
@@ -109,6 +113,7 @@ typedef enum ParsecStatus {
 	PARSEC_NOT_RUNNING        = -3,      ///< -3
 	PARSEC_ALREADY_RUNNING    = -4,      ///< -4
 	PARSEC_NOT_IMPLEMENTED    = -5,      ///< -5
+	PARSEC_ERR_PRE_RENDER     = -6,      ///< -6
 
 	DECODE_ERR_INIT           = -10,     ///< -10
 	DECODE_ERR_LOAD           = -11,     ///< -11
@@ -132,14 +137,12 @@ typedef enum ParsecStatus {
 	WS_ERR_AUTH               = -3008,   ///< -3008
 	WS_ERR_GOING_AWAY         = -3009,   ///< -3009
 
-	ZLIB_ERR_DEFLATE          = -5000,   ///< -5000
-	ZLIB_ERR_INFLATE          = -5001,   ///< -5001
-
 	NAT_ERR_PEER_PHASE        = -6023,   ///< -6023
 	NAT_ERR_STUN_PHASE        = -6024,   ///< -6024
 	NAT_ERR_NO_CANDIDATES     = -6033,   ///< -6033
 	NAT_ERR_JSON_ACTION       = -6111,   ///< -6111
 	NAT_ERR_NO_SOCKET         = -6112,   ///< -6112
+	NAT_ERR_WEBRTC            = -6200,   ///< -6200
 
 	OPENGL_ERR_CONTEXT        = -7000,   ///< -7000
 	OPENGL_ERR_SHARE          = -7001,   ///< -7001
@@ -151,20 +154,10 @@ typedef enum ParsecStatus {
 	OPENGL_ERR_VERSION        = -7007,   ///< -7007
 	OPENGL_ERR_TEXTURE        = -7008,   ///< -7008
 
-	JSON_ERR_PARSE            = -8000,   ///< -8000
-	JSON_ERR_MISSING          = -8001,   ///< -8001
-	JSON_ERR_TYPE             = -8002,   ///< -8002
-	JSON_ERR_VAL_TYPE         = -8003,   ///< -8003
-	JSON_ERR_BUFFER           = -8004,   ///< -8004
-	JSON_ERR_FOPEN            = -8005,   ///< -8005
-	JSON_ERR_FREAD            = -8006,   ///< -8006
-	JSON_ERR_FWRITE           = -8007,   ///< -8007
-
-	AUDIO_ERR_INIT            = -9000,   ///< -9000
+	AUDIO_ERR_CAPTURE_INIT    = -9000,   ///< -9000
 	AUDIO_ERR_CAPTURE         = -9001,   ///< -9001
 	AUDIO_ERR_NETWORK         = -9002,   ///< -9002
 	AUDIO_ERR_FREE            = -9003,   ///< -9003
-	AUDIO_ERR_PLAY            = -9004,   ///< -9004
 
 	AUDIO_OPUS_ERR_INIT       = -10000,  ///< -10000
 	AUDIO_OPUS_ERR_DECODE     = -10001,  ///< -10001
@@ -181,7 +174,6 @@ typedef enum ParsecStatus {
 	SERVER_ERR_RESOLUTION     = -13008,  ///< -13008
 	SERVER_ERR_MAX_RESOLUTION = -13009,  ///< -13009
 	SERVER_ERR_NO_USER        = -13011,  ///< -13011
-	SERVER_ERR_NO_ROOM        = -13012,  ///< -13012
 	SERVER_ERR_VIDEO_DONE     = -13013,  ///< -13013
 	SERVER_ERR_CLIENT_ABORT   = -13014,  ///< -13014
 	SERVER_ERR_CLIENT_GONE    = -13015,  ///< -13015
@@ -224,11 +216,7 @@ typedef enum ParsecStatus {
 	H26X_ERR_NOT_FOUND        = -23000,  ///< -23000
 
 	AES_GCM_ERR_KEY_LEN       = -28000,  ///< -28000
-	AES_GCM_ERR_ENCRYPT       = -28001,  ///< -28001
-	AES_GCM_ERR_DECRYPT       = -28002,  ///< -28002
-	AES_GCM_ERR_CTX           = -28003,  ///< -28003
 	AES_GCM_ERR_BUFFER        = -28004,  ///< -28004
-	AES_GCM_ERR_OVERFLOW      = -28005,  ///< -28005
 
 	SCTP_ERR_GLOBAL_INIT      = -32000,  ///< -32000
 	SCTP_ERR_WRITE            = -32001,  ///< -32001
@@ -257,6 +245,10 @@ typedef enum ParsecStatus {
 	RESAMPLE_ERR_RESAMPLE     = -37001,  ///< -37001
 
 	UNITY_UNSUPPORTED_ENGINE  = -38000,  ///< Caused when the graphics render engine isn't supported in Unity.
+
+	METAL_ERR_INIT            = -39000,  ///> -39000
+
+	RPI_ERR_MEM_SPLIT         = -40000,  ///> -40000
 
 	OPENSSL_ERR               = -600000, ///< `SSL_get_error` value will be subtracted from this value.
 
@@ -404,11 +396,19 @@ typedef enum ParsecKeycode {
 	__KEY_MAKE_32   = 0x7FFFFFFF,
 } ParsecKeycode;
 
-/// @brief Stateful modifier keys applied to keyboard input.
+/// @brief Modifier keys applied to keyboard input.
 /// @details Member of ::ParsecKeyboardMessage. These values may be bitwise OR'd together.
 typedef enum ParsecKeymod {
-	MOD_NONE      = 0x0000, ///< No stateful modifier key active.
-	MOD_NUM       = 0x1000, ///< `NUMLOCK` is currently active.
+	MOD_NONE      = 0x0000, ///< No modifier key active.
+	MOD_LSHIFT    = 0x0001, ///< `LEFT SHIFT` is currently active.
+	MOD_RSHIFT    = 0x0002, ///< `RIGHT SHIFT` is currently active.
+	MOD_LCTRL     = 0x0040, ///< `LEFT CONTROL` is currently active.
+	MOD_RCTRL     = 0x0080, ///< `RIGHT CONTROL` is currently active.
+	MOD_LALT      = 0x0100, ///< `LEFT ALT` is currently active.
+	MOD_RALT      = 0x0200, ///< `RIGHT ALT` is currently active.
+	MOD_LGUI      = 0x0400, ///< `LEFT GUI` is currently active. This is the Windows / left Command key.
+	MOD_RGUI      = 0x0800, ///< `RIGHT GUI` is currently active. This is the right Command key.
+	MOD_NUM	      = 0x1000, ///< `NUMLOCK` is currently active.
 	MOD_CAPS      = 0x2000, ///< `CAPSLOCK` is currently active.
 	__MOD_MAKE_32 = 0x7FFFFFFF,
 } ParsecKeymod;
@@ -442,8 +442,29 @@ typedef enum ParsecGamepadButton {
 	GAMEPAD_BUTTON_DPAD_DOWN  = 12, ///< Analog DPAD down.
 	GAMEPAD_BUTTON_DPAD_LEFT  = 13, ///< Analog DPAD left.
 	GAMEPAD_BUTTON_DPAD_RIGHT = 14, ///< Analog DPAD right.
+	GAMEPAD_BUTTON_MAX,
 	__GAMEPAD_BUTTON_MAKE_32  = 0x7FFFFFFF,
 } ParsecGamepadButton;
+
+/// @brief Gamepad state button.
+/// @details Bitwise OR for the `buttons` member of ::ParsecGamepadStateMessage.
+typedef enum ParsecGamepadState {
+	GAMEPAD_STATE_DPAD_UP        = 0x0001, ///< Analog DPAD up.
+	GAMEPAD_STATE_DPAD_DOWN      = 0x0002, ///< Analog DPAD down.
+	GAMEPAD_STATE_DPAD_LEFT      = 0x0004, ///< Analog DPAD left.
+	GAMEPAD_STATE_DPAD_RIGHT     = 0x0008, ///< Analog DPAD right.
+	GAMEPAD_STATE_START          = 0x0010, ///< Start button.
+	GAMEPAD_STATE_BACK           = 0x0020, ///< Back button.
+	GAMEPAD_STATE_LEFT_THUMB     = 0x0040, ///< Left thumbstick button.
+	GAMEPAD_STATE_RIGHT_THUMB    = 0x0080, ///< Right thumbstick button.
+	GAMEPAD_STATE_LEFT_SHOULDER  = 0x0100, ///< Left shoulder (bumper) button.
+	GAMEPAD_STATE_RIGHT_SHOULDER = 0x0200, ///< Right shoulder (bumper) button.
+	GAMEPAD_STATE_A              = 0x1000, ///< A button.
+	GAMEPAD_STATE_B              = 0x2000, ///< B button.
+	GAMEPAD_STATE_X              = 0x4000, ///< X button.
+	GAMEPAD_STATE_Y              = 0x8000, ///< Y button.
+	__GAMEPAD_STATE_MAKE_32      = 0x7FFFFFFF,
+} ParsecGamepadState;
 
 /// @brief Gamepad axes related to thumbsticks and triggers.
 /// @details Member of ::ParsecGamepadAxisMessage.
@@ -454,6 +475,7 @@ typedef enum ParsecGamepadAxis {
 	GAMEPAD_AXIS_RY        = 3, ///< Gamepad right thumbstick y-axis.
 	GAMEPAD_AXIS_TRIGGERL  = 4, ///< Gamepad left trigger value.
 	GAMEPAD_AXIS_TRIGGERR  = 5, ///< Gamepad right trigger value.
+	GAMEPAD_AXIS_MAX,
 	__GAMEPAD_AXIS_MAKE_32 = 0x7FFFFFFF,
 } ParsecGamepadAxis;
 
@@ -467,6 +489,8 @@ typedef enum ParsecMessageType {
 	MESSAGE_GAMEPAD_BUTTON = 5, ///< `gamepadButton` ::ParsecGamepadButtonMessage is valid in ::ParsecMessage.
 	MESSAGE_GAMEPAD_AXIS   = 6, ///< `gamepadAxis` ::ParsecGamepadAxisMessage is valid in ::ParsecMessage.
 	MESSAGE_GAMEPAD_UNPLUG = 7, ///< `gamepadUnplug` ::ParsecGamepadUnplugMessage is valid in ::ParsecMessage.
+	MESSAGE_GAMEPAD_STATE  = 8, ///< `gamepadState` ::ParsecGamepadStateMessage is valid in ::ParsecMessage.
+	MESSAGE_RELEASE        = 9, ///< Message instructing the host to release all input that is currently pressed.
 	__MESSAGE_MAKE_32      = 0x7FFFFFFF,
 } ParsecMessageType;
 
@@ -530,7 +554,7 @@ typedef enum ParsecHostMode {
 /// @details Member of ::ParsecHostEvent.
 typedef enum ParsecHostEventType {
 	HOST_EVENT_GUEST_STATE_CHANGE = 1, ///< A guest has changed connection state, `guestStateChange` is valid in ::ParsecHostEvent.
-	HOST_EVENT_USER_DATA          = 2, ///< User-defined message from a guest, `userData is valid in ::ParsecHostEvent.
+	HOST_EVENT_USER_DATA          = 2, ///< User-defined message from a guest, `userData` is valid in ::ParsecHostEvent.
 	HOST_EVENT_INVALID_SESSION_ID = 4, ///< The host's Session ID has become invalid.
 	__HOST_EVENT_MAKE_32          = 0x7FFFFFFF,
 } ParsecHostEventType;
@@ -616,7 +640,6 @@ typedef struct ParsecGuest {
 	uint32_t id;                    ///< Guest ID passed to various host functions.
 	uint32_t userID;                ///< Parsec unique user ID.
 	char name[GUEST_NAME_LEN];      ///< UTF-8 null-terminated name guest name string.
-	char attemptID[ATTEMPT_ID_LEN]; ///< Unique connection ID valid while `state` is ::GUEST_WAITING, otherwise filled with zeroes. ::HOST_DESKTOP only.
 	bool owner;                     ///< The guest is also the owner of the host computer. ::HOST_DESKTOP only.
 	uint8_t __pad[3];
 } ParsecGuest;
@@ -682,6 +705,19 @@ typedef struct ParsecGamepadUnplugMessage {
 	uint32_t id; ///< Unique client-provided index identifying the gamepad.
 } ParsecGamepadUnplugMessage;
 
+/// @brief Gamepad state message.
+/// @details Member of ::ParsecMessage.
+typedef struct ParsecGamepadStateMessage {
+	uint32_t id;          ///< Unique client-provided index identifying the gamepad.
+	uint16_t buttons;     ///< Bitwise OR of ::ParsecGamepadState values representing buttons pressed.
+	int16_t thumbLX;      ///< The left thumbstick X axis value between -32768 and 32767.
+	int16_t thumbLY;      ///< The left thumbstick Y axis value between -32768 and 32767.
+	int16_t thumbRX;      ///< The right thumbstick X axis value between -32768 and 32767.
+	int16_t thumbRY;      ///< The right thumbstick Y axis value between -32768 and 32767.
+	uint8_t leftTrigger;  ///< Value of the left trigger between 0 and 255.
+	uint8_t rightTrigger; ///< Value of the right trigger between 0 and 255.
+} ParsecGamepadStateMessage;
+
 /// @brief Generic input message that can represent any message type.
 /// @details Passed to ::ParsecClientSendMessage or returned by ::ParsecHostPollInput while
 ///     in ::HOST_GAME. The application can switch on the `type` member to see which `Message`
@@ -696,6 +732,7 @@ typedef struct ParsecMessage {
 		ParsecGamepadButtonMessage gamepadButton; ///< Gamepad button message.
 		ParsecGamepadAxisMessage gamepadAxis;     ///< Gamepad axis message.
 		ParsecGamepadUnplugMessage gamepadUnplug; ///< Gamepad unplug message.
+		ParsecGamepadStateMessage gamepadState;   ///< Gamepad state message.
 	};
 } ParsecMessage;
 
@@ -705,21 +742,23 @@ typedef struct ParsecMessage {
 ///     the owner of the computer. Setting `resolutionX` or `resolutionY` to `0` will leave the host resolution unaffected,
 ///     otherwise the host will attempt to find the closest matching resolution / refresh rate.
 typedef struct ParsecClientConfig {
-	int32_t decoderSoftware; ///< `true` to force decoding of video frames via a software implementation.
-	int32_t mediaContainer;  ///< ::ParsecContainer value.
-	int32_t protocol;        ///< ::ParsecProtocol value.
-	int32_t resolutionX;     ///< See details.
-	int32_t resolutionY;     ///< See details.
-	int32_t refreshRate;     ///< See details.
-	bool pngCursor;          ///< `true` to return compressed PNG cursor images during ::ParsecClientPollEvents, `false` to return a 32-bit RGBA image.
-	uint8_t __pad[3];
+	int32_t decoderSoftware;      ///< `true` to force decoding of video frames via a software implementation.
+	int32_t mediaContainer;       ///< ::ParsecContainer value.
+	int32_t protocol;             ///< ::ParsecProtocol value.
+	int32_t resolutionX;          ///< See details.
+	int32_t resolutionY;          ///< See details.
+	int32_t refreshRate;          ///< See details.
+	char secret[HOST_SECRET_LEN]; ///< ASCII null-terminated secret code that may be used to gain temporary access to a host.
+	bool pngCursor;               ///< `true` to return compressed PNG cursor images during ::ParsecClientPollEvents, `false` to return a 32-bit RGBA image.
+	bool decoderCompatibility;    ///< `true` to set the decoder to compatibility mode. This should be tried if having playback issues, especially on NVIDIA devices.
+	bool decoderH265;             ///< `true` to allow H.265 codec. This must be enabled on both the client and host.
+	uint8_t __pad[1];
 } ParsecClientConfig;
 
 /// @brief Client connection health and status information.
 /// @details Returned by ::ParsecClientGetStatus.
 typedef struct ParsecClientStatus {
 	ParsecMetrics metrics;          ///< Latency performance metrics.
-	char attemptID[ATTEMPT_ID_LEN]; ///< Most recent connection `attemptID`. Valid even if ::ParsecClientConnect does not return ::PARSEC_OK.
 	bool networkFailure;            ///< Client is currently experiencing network failure.
 	bool decoderFallback;           ///< `true` if the client had to fallback to software decoding after being unable to internally initialize a hardware accelerated decoder.
 	uint8_t __pad[1];
@@ -763,19 +802,20 @@ typedef struct ParsecClientEvent {
 /// @brief Host configuration.
 /// @details Member of ::ParsecHostStatus, passed to ::ParsecHostStart and ::ParsecHostSetConfig.
 typedef struct ParsecHostConfig {
-	int32_t resolutionX;       ///< Resolution width. ::HOST_DESKTOP owner only.
-	int32_t resolutionY;       ///< Resolution height. ::HOST_DESKTOP owner only.
-	int32_t refreshRate;       ///< Refresh rate in Hz. ::HOST_DESKTOP owner only.
-	int32_t adminMute;         ///< Mute local audio on owner connection. ::HOST_DESKTOP owner only.
-	int32_t exclusiveInput;    ///< Block remote input when local host input occurs. ::HOST_DESKTOP only.
-	int32_t encoderFPS;        ///< Desired frames per second.
-	int32_t encoderMaxBitrate; ///< Maximum output bitrate in Mbps, split between guests.
-	int32_t encoderH265;       ///< Allow H.265 codec.
-	int32_t maxGuests;         ///< Total number of guests allowed at once. This number should not include the local host.
-	char name[HOST_NAME_LEN];  ///< UTF-8 null-terminated name string. May be zeroed to use hostname.
-	char desc[HOST_DESC_LEN];  ///< UTF-8 null-terminated description string. ::HOST_GAME only.
-	char gameID[GAME_ID_LEN];  ///< Game unique identifier issued by Parsec. ::HOST_GAME only.
-	bool publicGame;           ///< Set to `true` to allow the hosting session to be visible publicly in the Parsec Arcade. ::HOST_GAME only.
+	int32_t resolutionX;          ///< Resolution width. ::HOST_DESKTOP owner only.
+	int32_t resolutionY;          ///< Resolution height. ::HOST_DESKTOP owner only.
+	int32_t refreshRate;          ///< Refresh rate in Hz. ::HOST_DESKTOP owner only.
+	int32_t adminMute;            ///< Mute local audio on owner connection. ::HOST_DESKTOP owner only.
+	int32_t exclusiveInput;       ///< Block remote input when local host input occurs. ::HOST_DESKTOP only.
+	int32_t encoderFPS;           ///< Desired frames per second.
+	int32_t encoderMaxBitrate;    ///< Maximum output bitrate in Mbps, split between guests.
+	int32_t encoderH265;          ///< Allow H.265 codec.
+	int32_t maxGuests;            ///< Total number of guests allowed at once. This number should not include the local host.
+	char name[HOST_NAME_LEN];     ///< UTF-8 null-terminated name string. May be zeroed to use hostname.
+	char desc[HOST_DESC_LEN];     ///< UTF-8 null-terminated description string. ::HOST_GAME only.
+	char gameID[GAME_ID_LEN];     ///< Game unique identifier issued by Parsec. ::HOST_GAME only.
+	char secret[HOST_SECRET_LEN]; ///< ASCII null-terminated secret code that can be distributed to guests to allow temporary access. Minimum 8 characters.
+	bool publicGame;              ///< Set to `true` to allow the hosting session to be visible publicly in the Parsec Arcade. ::HOST_GAME only.
 	uint8_t __pad[3];
 } ParsecHostConfig;
 
@@ -826,6 +866,14 @@ typedef struct Parsec Parsec;
 /// @details Passed to ::ParsecHostGLSubmitFrame. Prevents obligatory include of GL headers.
 typedef uint32_t ParsecGLuint;
 
+/// @brief Metal `id<MTLCommandQueue>`.
+/// @details Passed to ::ParsecClientMetalRenderFrame. Prevents dependence on Objective-C and obligatory include of Metal.h.
+typedef void ParsecMetalCommandQueue;
+
+/// @brief Metal `id<MTLTexture>`.
+/// @details Passed to ::ParsecClientMetalRenderFrame. Prevents dependence on Objective-C and obligatory include of Metal.h.
+typedef void ParsecMetalTexture;
+
 /// @brief D3D9 `IDirect3DDevice9`.
 /// @details Passed to ::ParsecHostD3D9SubmitFrame. Prevents obligatory include of d3d9.h.
 typedef void ParsecD3D9Device;
@@ -853,15 +901,26 @@ typedef void ParsecD3D11Texture2D;
 /// @param opaque User supplied context passed to ::ParsecSetLogCallback.
 typedef void (*ParsecLogCallback)(ParsecLogLevel level, char *msg, void *opaque);
 
-/// @brief Fired synchronously if a new frame is available from the host.
-/// @details Passed to ::ParsecClientPollFrame.
+/// @brief Fired synchronously if a new host video frame is available.
+/// @details Passed to ::ParsecClientPollFrame. IMPORTANT: Parsec SDK functions may not be called
+///     within this callback, doing so will result in a deadlock on the calling thread.
 /// @param frame Video frame properties.
 /// @param image The video frame buffer containing image data.
 /// @param opaque User supplied context passed to ::ParsecClientPollFrame.
 typedef void (*ParsecFrameCallback)(ParsecFrame *frame, uint8_t *image, void *opaque);
 
+/// @brief Fired synchronously just before a new host video frame is rendered.
+/// @details Passed to the `ClientRenderFrame` family of functions, i.e. ::ParsecClientGLRenderFrame.
+///     IMPORTANT: Parsec SDK functions may not be called within this callback, doing so will result
+///     in a deadlock on the calling thread.
+/// @param opaque User supplied context passed to the `ClientRenderFrame` function.
+/// @returns `true` if the frame should be rendered internally, `false` if rendering should be skipped. If
+///     returning `false`, the `ClientRenderFrame` parent function will return ::PARSEC_ERR_PRE_RENDER.
+typedef bool (*ParsecPreRenderCallback)(void *opaque);
+
 /// @brief Fired synchronously if new audio is available from the host.
-/// @details Passed to ::ParsecClientPollAudio.
+/// @details Passed to ::ParsecClientPollAudio. IMPORTANT: Parsec SDK functions may not
+///     be called within this callback, doing so will result in a deadlock on the calling thread.
 /// @param pcm 16-bit signed, two channel, 48KHz PCM audio samples.
 /// @param frames Number of audio frames.
 /// @param opaque User supplied context passed to ::ParsecClientPollAudio.
@@ -871,41 +930,45 @@ typedef void (*ParsecAudioCallback)(int16_t *pcm, uint32_t frames, void *opaque)
 /*** INSTANCE FUNCTIONS ***/
 
 #if defined(PARSEC_DSO)
-#define ParsecInit                 (*ParsecInit)
-#define ParsecDestroy              (*ParsecDestroy)
-#define ParsecGetConfig            (*ParsecGetConfig)
-#define ParsecGetBuffer            (*ParsecGetBuffer)
-#define ParsecFree                 (*ParsecFree)
-#define ParsecSetLogCallback       (*ParsecSetLogCallback)
-#define ParsecVersion              (*ParsecVersion)
-#define ParsecClientConnect        (*ParsecClientConnect)
-#define ParsecClientDisconnect     (*ParsecClientDisconnect)
-#define ParsecClientGetStatus      (*ParsecClientGetStatus)
-#define ParsecClientSetDimensions  (*ParsecClientSetDimensions)
-#define ParsecClientPollFrame      (*ParsecClientPollFrame)
-#define ParsecClientPollAudio      (*ParsecClientPollAudio)
-#define ParsecClientPollEvents     (*ParsecClientPollEvents)
-#define ParsecClientGLRenderFrame  (*ParsecClientGLRenderFrame)
-#define ParsecClientGLDestroy      (*ParsecClientGLDestroy)
-#define ParsecClientSendMessage    (*ParsecClientSendMessage)
-#define ParsecClientSendUserData   (*ParsecClientSendUserData)
-#define ParsecHostStart            (*ParsecHostStart)
-#define ParsecHostStop             (*ParsecHostStop)
-#define ParsecHostGetStatus        (*ParsecHostGetStatus)
-#define ParsecHostSetConfig        (*ParsecHostSetConfig)
-#define ParsecHostGetGuests        (*ParsecHostGetGuests)
-#define ParsecHostKickGuest        (*ParsecHostKickGuest)
-#define ParsecHostSendUserData     (*ParsecHostSendUserData)
-#define ParsecHostPollEvents       (*ParsecHostPollEvents)
-#define ParsecHostAllowGuest       (*ParsecHostAllowGuest)
-#define ParsecHostSetPermissions   (*ParsecHostSetPermissions)
-#define ParsecHostPollInput        (*ParsecHostPollInput)
-#define ParsecHostSubmitAudio      (*ParsecHostSubmitAudio)
-#define ParsecHostSubmitCursor     (*ParsecHostSubmitCursor)
-#define ParsecHostSubmitRumble     (*ParsecHostSubmitRumble)
-#define ParsecHostGLSubmitFrame    (*ParsecHostGLSubmitFrame)
-#define ParsecHostD3D9SubmitFrame  (*ParsecHostD3D9SubmitFrame)
-#define ParsecHostD3D11SubmitFrame (*ParsecHostD3D11SubmitFrame)
+#define ParsecInit                      (*ParsecInit)
+#define ParsecDestroy                   (*ParsecDestroy)
+#define ParsecGetConfig                 (*ParsecGetConfig)
+#define ParsecGetBuffer                 (*ParsecGetBuffer)
+#define ParsecFree                      (*ParsecFree)
+#define ParsecSetLogCallback            (*ParsecSetLogCallback)
+#define ParsecVersion                   (*ParsecVersion)
+#define ParsecClientConnect             (*ParsecClientConnect)
+#define ParsecClientDisconnect          (*ParsecClientDisconnect)
+#define ParsecClientGetStatus           (*ParsecClientGetStatus)
+#define ParsecClientSetDimensions       (*ParsecClientSetDimensions)
+#define ParsecClientPollFrame           (*ParsecClientPollFrame)
+#define ParsecClientPollAudio           (*ParsecClientPollAudio)
+#define ParsecClientPollEvents          (*ParsecClientPollEvents)
+#define ParsecClientGLRenderFrame       (*ParsecClientGLRenderFrame)
+#define ParsecClientMetalRenderFrame    (*ParsecClientMetalRenderFrame)
+#define ParsecClientD3D9RenderFrame     (*ParsecClientD3D9RenderFrame)
+#define ParsecClientD3D11RenderFrame    (*ParsecClientD3D11RenderFrame)
+#define ParsecClientGLDestroy           (*ParsecClientGLDestroy)
+#define ParsecClientSendMessage         (*ParsecClientSendMessage)
+#define ParsecClientPause               (*ParsecClientPause)
+#define ParsecClientSendUserData        (*ParsecClientSendUserData)
+#define ParsecHostStart                 (*ParsecHostStart)
+#define ParsecHostStop                  (*ParsecHostStop)
+#define ParsecHostGetStatus             (*ParsecHostGetStatus)
+#define ParsecHostSetConfig             (*ParsecHostSetConfig)
+#define ParsecHostGetGuests             (*ParsecHostGetGuests)
+#define ParsecHostKickGuest             (*ParsecHostKickGuest)
+#define ParsecHostSendUserData          (*ParsecHostSendUserData)
+#define ParsecHostPollEvents            (*ParsecHostPollEvents)
+#define ParsecHostAllowGuest            (*ParsecHostAllowGuest)
+#define ParsecHostSetPermissions        (*ParsecHostSetPermissions)
+#define ParsecHostPollInput             (*ParsecHostPollInput)
+#define ParsecHostSubmitAudio           (*ParsecHostSubmitAudio)
+#define ParsecHostSubmitCursor          (*ParsecHostSubmitCursor)
+#define ParsecHostSubmitRumble          (*ParsecHostSubmitRumble)
+#define ParsecHostGLSubmitFrame         (*ParsecHostGLSubmitFrame)
+#define ParsecHostD3D9SubmitFrame       (*ParsecHostD3D9SubmitFrame)
+#define ParsecHostD3D11SubmitFrame      (*ParsecHostD3D11SubmitFrame)
 
 typedef struct ParsecAPI {
 #endif
@@ -966,13 +1029,14 @@ ParsecVersion(void);
 
 /*** CLIENT FUNCTIONS ***/
 
-/// @brief Connect to a remote Parsec host.
-/// @details Performs authentication, peer-to-peer negotiation, and NAT traversal.
+/// @brief Begin connecting to a remote Parsec host.
+/// @details Performs authentication, peer-to-peer negotiation, and NAT traversal. This function operates asynchronously
+///     and will return immediately. Call ::ParsecClientGetStatus to determine if the client has successfully connected or is in an error state.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
 /// @param[in] cfg Client configuration. May be left `NULL` to use ::PARSEC_CLIENT_DEFAULTS.
 /// @param[in] sessionID Session ID obtained via the [Parsec API](https://github.com/parsec-cloud/parsec-sdk/tree/master/api/public).
 /// @param[in] peerID Remote host Peer ID obtained via the [Parsec API](https://github.com/parsec-cloud/parsec-sdk/tree/master/api/public).
-/// @returns ::PARSEC_OK on successful connection, otherwise a ::ParsecStatus error value.
+/// @returns ::PARSEC_OK if the connection attempt is underway, ::PARSEC_ALREADY_RUNNING if there is an active connection.
 EXPORT ParsecStatus
 ParsecClientConnect(Parsec *ps, ParsecClientConfig *cfg, char *sessionID, char *peerID);
 
@@ -982,11 +1046,14 @@ EXPORT void
 ParsecClientDisconnect(Parsec *ps);
 
 /// @brief Get client connection health and status information.
-/// @details This function should be polled during runtime to check if a client session should continue.
-///     The return value can be used to stop a client session and proceed to cleanup if not ::PARSEC_OK.
+/// @details This function should be polled frequently during runtime to check if a client session has
+///     completed its connection or is in an error state. If the client is in an error state, a ::ParsecStatus
+///     error value will continue to be returned until the next call to ::ParsecClientConnect or ::ParsecClientDisconnect.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
-/// @param[out] status Client connection health and status information.
-/// @returns ::PARSEC_OK if the client is running properly, otherwise a ::ParsecStatus error value.
+/// @param[out] status Client connection health and status information. May be `NULL`.
+/// @returns ::PARSEC_NOT_RUNNING if there is no active connection, ::PARSEC_CONNECTING if a connection attempt is underway,
+///     ::PARSEC_OK if the client is connected to a host and healthy, otherwise a ::ParsecStatus error value if the client is
+///     in an error state.
 EXPORT ParsecStatus
 ParsecClientGetStatus(Parsec *ps, ParsecClientStatus *status);
 
@@ -1030,14 +1097,55 @@ ParsecClientPollAudio(Parsec *ps, ParsecAudioCallback callback, uint32_t timeout
 EXPORT bool
 ParsecClientPollEvents(Parsec *ps, uint32_t timeout, ParsecClientEvent *event);
 
-/// @brief Waits for and efficiently renders a remote video frame with OpenGL/GLES.
+/// @brief Renders a remote video frame with OpenGL/GLES.
 /// @details If the timeout expires, the previous frame is rendered. Must be called from a
 ///     thread with a current OpenGL/GLES 2.0 compatible context.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
+/// @param[in] pre ::ParsecPreRenderCallback fired just before the frame is rendered. May be `NULL`.
+/// @param[in] opaque User supplied context to be passed through `pre`.
 /// @param[in] timeout Time in milliseconds to wait for a new frame or render the previous frame and return.
-/// @returns ::PARSEC_OK if a new frame was rendered, otherwise a ::ParsecStatus warning if the previous frame was rendered.
+/// @returns ::PARSEC_OK if a frame was rendered successfully, otherwise a ::ParsecStatus error value.
 EXPORT ParsecStatus
-ParsecClientGLRenderFrame(Parsec *ps, uint32_t timeout);
+ParsecClientGLRenderFrame(Parsec *ps, ParsecPreRenderCallback pre, void *opaque, uint32_t timeout);
+
+/// @brief Renders a remote video frame with Metal.
+/// @details If the timeout expires, the previous frame is rendered.
+/// @param[in] ps ::Parsec instance returned by ::ParsecInit.
+/// @param[in] cq Cast to `id<MTLCommandQueue>` used within your render loop.
+/// @param[in] target Cast to `id<MTLTexture>` render target used within your render loop. This value is passed by
+///     reference to allow you to set it during the ::ParsecPreRenderCallback.
+/// @param[in] pre ::ParsecPreRenderCallback fired just before the frame is rendered. May be `NULL`.
+/// @param[in] opaque User supplied context to be passed through `pre`.
+/// @param[in] timeout Time in milliseconds to wait for a new frame or render the previous frame and return.
+/// @returns ::PARSEC_OK if a frame was rendered successfully, otherwise a ::ParsecStatus error value.
+EXPORT ParsecStatus
+ParsecClientMetalRenderFrame(Parsec *ps, ParsecMetalCommandQueue *cq, ParsecMetalTexture **target,
+	ParsecPreRenderCallback pre, void *opaque, uint32_t timeout);
+
+/// @brief Renders a remote video frame with D3D9.
+/// @details If the timeout expires, the previous frame is rendered.
+/// @param[in] ps ::Parsec instance returned by ::ParsecInit.
+/// @param[in] device Cast to `IDirect3DDevice9 *` used within your render loop.
+/// @param[in] pre ::ParsecPreRenderCallback fired just before the frame is rendered. May be `NULL`.
+/// @param[in] opaque User supplied context to be passed through `pre`.
+/// @param[in] timeout Time in milliseconds to wait for a new frame or render the previous frame and return.
+/// @returns ::PARSEC_OK if a frame was rendered successfully, otherwise a ::ParsecStatus error value.
+EXPORT ParsecStatus
+ParsecClientD3D9RenderFrame(Parsec *ps, ParsecD3D9Device *device, ParsecPreRenderCallback pre,
+	void *opaque, uint32_t timeout);
+
+/// @brief Renders a remote video frame with D3D11.
+/// @details If the timeout expires, the previous frame is rendered.
+/// @param[in] ps ::Parsec instance returned by ::ParsecInit.
+/// @param[in] device Cast to `ID3D11Device *` used within your render loop.
+/// @param[in] context Cast to `ID3D11DeviceContext *` used within your render loop.
+/// @param[in] pre ::ParsecPreRenderCallback fired just before the frame is rendered. May be `NULL`.
+/// @param[in] opaque User supplied context to be passed through `pre`.
+/// @param[in] timeout Time in milliseconds to wait for a new frame or render the previous frame and return.
+/// @returns ::PARSEC_OK if a frame was rendered successfully, otherwise a ::ParsecStatus error value.
+EXPORT ParsecStatus
+ParsecClientD3D11RenderFrame(Parsec *ps, ParsecD3D11Device *device, ParsecD3D11DeviceContext *context,
+	ParsecPreRenderCallback pre, void *opaque, uint32_t timeout);
 
 /// @brief Cleanup internal OpenGL/GLES state.
 /// @details Must be called from a thread with a current OpenGL/GLES 2.0 compatible context.
@@ -1045,7 +1153,7 @@ ParsecClientGLRenderFrame(Parsec *ps, uint32_t timeout);
 EXPORT void
 ParsecClientGLDestroy(Parsec *ps);
 
-/// @brief Send an input message to the remote host.
+/// @brief Send an input message to the host.
 /// @details This function sends one of the input types defined in ::ParsecMessageType set in the
 ///     `type` member of the ::ParsecMessage `msg` parameter. The indicated message type is then filled
 ///     out in the appropriate `Message` struct in `msg`.
@@ -1055,7 +1163,17 @@ ParsecClientGLDestroy(Parsec *ps);
 EXPORT ParsecStatus
 ParsecClientSendMessage(Parsec *ps, ParsecMessage *msg);
 
-/// @brief Send a user-defined string to the remote host.
+/// @brief Pause video and/or audio output from the host.
+/// @details Useful if your application enters a background state or temporarily wants to save
+///     resources by pausing the processing of video and/or audio.
+/// @param[in] ps ::Parsec instance returned by ::ParsecInit.
+/// @param[in] pauseVideo `true` if video from the host should be paused, `false` to resume video output.
+/// @param[in] pauseAudio `true` if audio from the host should be paused, `false` to resume audio output.
+/// @returns ::PARSEC_OK if the pause message was sent successfully, otherwise a ::ParsecStatus error value.
+EXPORT ParsecStatus
+ParsecClientPause(Parsec *ps, bool pauseVideo, bool pauseAudio);
+
+/// @brief Send a user-defined string to the host.
 /// @details The host may set an optional callback to process user-defined messages. These messages may be any
 ///     type of data serialized via JSON or XML. Note: Parsec's peer-to-peer protocol is optimized for
 ///     targeted bitrate, low-latency media streaming and not bulk file transfer. Very large messages sent
@@ -1113,7 +1231,7 @@ ParsecHostSetConfig(Parsec *ps, ParsecHostConfig *cfg, char *sessionID);
 /// @param[out] guests Pointer to an array of guests. May be `NULL` to query the number of guests but not set the array.
 /// @returns The length of the array returned in `guests`.
 EXPORT uint32_t
-ParsecHostGetGuests(Parsec *ps, ParsecGuestState state, ParsecGuest **guests);
+ParsecHostGetGuests(Parsec *ps, uint32_t state, ParsecGuest **guests);
 
 /// @brief Kick guest.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
@@ -1142,11 +1260,11 @@ ParsecHostPollEvents(Parsec *ps, uint32_t timeout, ParsecHostEvent *event);
 
 /// @brief Allow or reject a pending guest. ::HOST_DESKTOP only.
 /// @param[in] ps ::Parsec instance returned by ::ParsecInit.
-/// @param[in] attemptID Unique connection ID found in ::ParsecGuest struct obtained via ::ParsecHostGetGuests.
+/// @param[in] guestID `id` member of ::ParsecGuest returned by ::ParsecHostGetGuests.
 /// @param[in] allow `true` to allow the guest to connect, `false` to have them disconnect immediately.
 /// @returns ::PARSEC_OK on success or ::PARSEC_NOT_RUNNING if the host has not been started.
 EXPORT ParsecStatus
-ParsecHostAllowGuest(Parsec *ps, char *attemptID, bool allow);
+ParsecHostAllowGuest(Parsec *ps, uint32_t guestID, bool allow);
 
 /// @brief Change guest input permissions. ::HOST_DESKTOP only.
 /// @details Current input permissions can be queried with ::ParsecHostGetGuests.
@@ -1240,8 +1358,12 @@ ParsecHostD3D11SubmitFrame(Parsec *ps, ParsecD3D11Device *device, ParsecD3D11Dev
 #undef ParsecClientPollAudio
 #undef ParsecClientPollEvents
 #undef ParsecClientGLRenderFrame
+#undef ParsecClientMetalRenderFrame
+#undef ParsecClientD3D9RenderFrame
+#undef ParsecClientD3D11RenderFrame
 #undef ParsecClientGLDestroy
 #undef ParsecClientSendMessage
+#undef ParsecClientPause
 #undef ParsecClientSendUserData
 #undef ParsecHostStart
 #undef ParsecHostStop
@@ -1267,5 +1389,5 @@ ParsecHostD3D11SubmitFrame(Parsec *ps, ParsecD3D11Device *device, ParsecD3D11Dev
 #endif
 
 #if defined(_WIN32)
-	#pragma warning(default: 4201)
+	#pragma warning(pop)
 #endif
