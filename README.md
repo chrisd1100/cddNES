@@ -1,3 +1,6 @@
+## cddNES is moving to [Merton](https://github.com/matoya/merton)
+If you're interested in a [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk) integration example, stay here, otherwise [Merton](https://github.com/matoya/merton) is the place to be.
+
 ## Overview
 cddNES is a cycle accurate NES emulator written in [pure C with no dependencies](/src) (although the [ui](/ui) has a few). The code base is lean with a focus on accuracy and readability--but don't let its minimal nature fool you, it [passes almost every known test](/test) and successfully emulates tricky games such as [Battletoads](https://en.wikipedia.org/wiki/Battletoads_(video_game)) with a only a handful of minor issues listed below.
   
